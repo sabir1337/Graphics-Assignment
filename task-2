@@ -1,0 +1,165 @@
+#ifdef __APPLE__
+#include <GLUT/glut.h>
+#else
+#include <GL/glut.h>
+#endif
+
+#include <iostream>
+#include <cmath>
+using namespace std;
+
+// ---------------------------------------------------------
+// GLOBAL CONFIGURATION
+// ---------------------------------------------------------
+int winWidth  = 640;
+int winHeight = 480;
+
+int midX = 320, midY = 240;
+
+int totalRings    = 10;  // total concentric circles
+int baseRadius    = 20;  // innermost circle radius
+int radiusGap     = 15;  // radius step per ring
+int baseThickness = 2;   // innermost line width
+int thickGap      = 1;   // thickness step per ring
+
+float innerR = 1.0f, innerG = 0.0f, innerB = 0.0f; // center color
+float outerR = 0.0f, outerG = 0.0f, outerB = 1.0f; // edge color
+
+// ---------------------------------------------------------
+// Plot a single pixel
+// ---------------------------------------------------------
+void plot(int x, int y)
+{
+    glVertex2i(x, y);
+}
+
+// ---------------------------------------------------------
+// Plot 8 symmetric points of a circle
+// ---------------------------------------------------------
+void plotCirclePoints(int cx, int cy, int x, int y)
+{
+    plot(cx + x, cy + y);
+    plot(cx - x, cy + y);
+    plot(cx + x, cy - y);
+    plot(cx - x, cy - y);
+
+    plot(cx + y, cy + x);
+    plot(cx - y, cy + x);
+    plot(cx + y, cy - x);
+    plot(cx - y, cy - x);
+}
+
+// ---------------------------------------------------------
+// Draw circle with specific thickness
+// ---------------------------------------------------------
+void drawCircle(int cx, int cy, int r, int thickness)
+{
+    for (int offset = 0; offset < thickness; offset++)
+    {
+        int radius = r + offset;
+        int x = 0;
+        int y = radius;
+        int d = 1 - radius;
+
+        glBegin(GL_POINTS);
+        while (y >= x)
+        {
+            plotCirclePoints(cx, cy, x, y);
+
+            if (d < 0)
+                d += 2 * x + 3;
+            else
+            {
+                d += 2 * (x - y) + 5;
+                y--;
+            }
+            x++;
+        }
+        glEnd();
+    }
+}
+
+// ---------------------------------------------------------
+// Linear interpolation (used for gradient coloring)
+// ---------------------------------------------------------
+float blend(float a, float b, float ratio)
+{
+    return a + ratio * (b - a);
+}
+
+// ---------------------------------------------------------
+// Draw multiple circles forming a gradient pattern
+// ---------------------------------------------------------
+void drawGradientRings()
+{
+    for (int i = 0; i < totalRings; i++)
+    {
+        int rNow   = baseRadius + i * radiusGap;
+        int tNow   = baseThickness + i * thickGap;
+        float frac = (totalRings > 1) ? (float)i / (totalRings - 1) : 0.0f;
+
+        float R = blend(innerR, outerR, frac);
+        float G = blend(innerG, outerG, frac);
+        float B = blend(innerB, outerB, frac);
+
+        glColor3f(R, G, B);
+        drawCircle(midX, midY, rNow, tNow);
+    }
+}
+
+// ---------------------------------------------------------
+// OpenGL callbacks
+// ---------------------------------------------------------
+void display()
+{
+    glClear(GL_COLOR_BUFFER_BIT);
+    drawGradientRings();
+    glFlush();
+}
+
+void setup()
+{
+    glClearColor(1.0, 1.0, 1.0, 1.0);
+    glPointSize(2.0);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluOrtho2D(0, winWidth, 0, winHeight);
+}
+
+// ---------------------------------------------------------
+// MAIN FUNCTION
+// ---------------------------------------------------------
+int main(int argc, char** argv)
+{
+    cout << "Enter center X Y (e.g. 320 240): ";
+    cin >> midX >> midY;
+
+    cout << "Enter total rings: ";
+    cin >> totalRings;
+
+    cout << "Enter base radius and step (e.g. 20 15): ";
+    cin >> baseRadius >> radiusGap;
+
+    cout << "Enter base thickness and step (e.g. 2 1): ";
+    cin >> baseThickness >> thickGap;
+
+    cout << "Enter inner color RGB (e.g. 1 0 0): ";
+    cin >> innerR >> innerG >> innerB;
+
+    cout << "Enter outer color RGB (e.g. 0 0 1): ";
+    cin >> outerR >> outerG >> outerB;
+
+    cout << "\nDrawing concentric gradient circles...\n";
+
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_SINGLE | GLUT_RGB);
+    glutInitWindowSize(winWidth, winHeight);
+    glutInitWindowPosition(120, 100);
+    glutCreateWindow("Gradient Concentric Circles (Custom Version)");
+
+    setup();
+    glutDisplayFunc(display);
+    glutMainLoop();
+
+    return 0;
+}
