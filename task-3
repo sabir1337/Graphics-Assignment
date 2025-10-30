@@ -1,0 +1,202 @@
+#ifdef __APPLE__
+#include <GLUT/glut.h>   // macOS
+#else
+#include <GL/glut.h>     // Windows / Linux
+#endif
+
+#include <iostream>
+#include <vector>
+#include <cmath>
+using namespace std;
+
+// =====================================================
+// GLOBAL CONFIGURATION
+// =====================================================
+
+// Clipping window boundaries
+float xmin_win = 100.0f;
+float ymin_win = 100.0f;
+float xmax_win = 400.0f;
+float ymax_win = 300.0f;
+
+// Window size
+const int WINDOW_W = 600;
+const int WINDOW_H = 600;
+
+// Mouse interaction
+bool firstClick = true;
+struct Point2D {
+    float x, y;
+};
+Point2D tempPoint;
+
+// Line segment structure
+struct Segment {
+    Point2D p1, p2;
+};
+vector<Segment> segments;
+
+// =====================================================
+// DRAW HELPERS
+// =====================================================
+
+// Draw a simple line from (x1,y1) → (x2,y2)
+void drawLine(float x1, float y1, float x2, float y2) {
+    glBegin(GL_LINES);
+    glVertex2f(x1, y1);
+    glVertex2f(x2, y2);
+    glEnd();
+}
+
+// Draw rectangle for clipping window
+void drawRect(float xmin, float ymin, float xmax, float ymax) {
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(xmin, ymin);
+    glVertex2f(xmax, ymin);
+    glVertex2f(xmax, ymax);
+    glVertex2f(xmin, ymax);
+    glEnd();
+}
+
+// =====================================================
+// LIANG–BARSKY LINE CLIPPING ALGORITHM
+// =====================================================
+bool liangBarskyClip(
+    float xmin, float ymin, float xmax, float ymax,
+    Point2D P0, Point2D P1,
+    Point2D &outP0, Point2D &outP1
+) {
+    float dx = P1.x - P0.x;
+    float dy = P1.y - P0.y;
+    float u1 = 0.0f, u2 = 1.0f;
+
+    auto clipTest = [&](float p, float q) -> bool {
+        if (fabs(p) < 1e-9f) {
+            if (q < 0.0f) return false;
+            return true;
+        }
+        float r = q / p;
+        if (p < 0.0f) {
+            if (r > u2) return false;
+            if (r > u1) u1 = r;
+        } else if (p > 0.0f) {
+            if (r < u1) return false;
+            if (r < u2) u2 = r;
+        }
+        return true;
+    };
+
+    if (!clipTest(-dx, P0.x - xmin)) return false;
+    if (!clipTest( dx, xmax - P0.x)) return false;
+    if (!clipTest(-dy, P0.y - ymin)) return false;
+    if (!clipTest( dy, ymax - P0.y)) return false;
+    if (u2 < u1) return false;
+
+    outP0.x = P0.x + u1 * dx;
+    outP0.y = P0.y + u1 * dy;
+    outP1.x = P0.x + u2 * dx;
+    outP1.y = P0.y + u2 * dy;
+    return true;
+}
+
+// =====================================================
+// RENDERING
+// =====================================================
+void display() {
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Draw clipping window in cyan
+    glColor3f(0.0f, 1.0f, 1.0f);
+    glLineWidth(2.0f);
+    drawRect(xmin_win, ymin_win, xmax_win, ymax_win);
+
+    int i = 0;
+    for (const auto &seg : segments) {
+        // Draw original line (gray)
+        glColor3f(0.5f, 0.5f, 0.5f);
+        glLineWidth(1.5f);
+        drawLine(seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
+
+        // Apply clipping
+        Point2D c0, c1;
+        bool visible = liangBarskyClip(
+            xmin_win, ymin_win, xmax_win, ymax_win,
+            seg.p1, seg.p2, c0, c1
+        );
+
+        // Draw clipped visible portion in yellow
+        if (visible) {
+            glColor3f(1.0f, 1.0f, 0.0f);
+            glLineWidth(3.0f);
+            drawLine(c0.x, c0.y, c1.x, c1.y);
+        } else {
+            // Red for lines fully outside
+            glColor3f(1.0f, 0.0f, 0.0f);
+            glLineWidth(1.5f);
+            drawLine(seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
+        }
+        i++;
+    }
+
+    glFlush();
+}
+
+// =====================================================
+// INITIALIZATION
+// =====================================================
+void initGL() {
+    glClearColor(0.0, 0.0, 0.0, 1.0); // black background
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluOrtho2D(0.0, WINDOW_W, 0.0, WINDOW_H);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glLineWidth(2.0f);
+}
+
+// =====================================================
+// MOUSE HANDLER - DRAW LINES BY CLICKING
+// =====================================================
+void mouseHandler(int button, int state, int x, int y) {
+    if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+        float xPos = (float)x;
+        float yPos = WINDOW_H - (float)y;  // Flip Y axis for OpenGL coords
+
+        if (firstClick) {
+            tempPoint = {xPos, yPos};
+            firstClick = false;
+            cout << "First point set: (" << xPos << ", " << yPos << ")\n";
+        } else {
+            Segment s;
+            s.p1 = tempPoint;
+            s.p2 = {xPos, yPos};
+            segments.push_back(s);
+            firstClick = true;
+            cout << "Line added from (" << s.p1.x << ", " << s.p1.y 
+                 << ") to (" << s.p2.x << ", " << s.p2.y << ")\n";
+            glutPostRedisplay(); // refresh display
+        }
+    }
+}
+
+// =====================================================
+// MAIN
+// =====================================================
+int main(int argc, char** argv) {
+    cout << "Enter clipping window (xmin ymin xmax ymax): ";
+    cin >> xmin_win >> ymin_win >> xmax_win >> ymax_win;
+    if (xmin_win > xmax_win) swap(xmin_win, xmax_win);
+    if (ymin_win > ymax_win) swap(ymin_win, ymax_win);
+
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_SINGLE | GLUT_RGB);
+    glutInitWindowSize(WINDOW_W, WINDOW_H);
+    glutInitWindowPosition(100, 100);
+    glutCreateWindow("Liang–Barsky Line Clipping (Interactive)");
+
+    initGL();
+    glutDisplayFunc(display);
+    glutMouseFunc(mouseHandler);
+    glutMainLoop();
+    return 0;
+}
